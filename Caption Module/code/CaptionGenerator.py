@@ -46,13 +46,7 @@ class CaptionGenerator(object):
         self.first_word=first_word
 
         global xp
-        if self.gpu_id >= 0:
-            xp = cuda.cupy 
-            cuda.get_device(gpu_id).use()
-            self.cnn_model.to_gpu()
-            self.rnn_model.to_gpu()
-        else:
-            xp=np
+        xp=np
 
     def parse_dic(self,dictonary_place):
         with open(dictonary_place, 'r') as f:
@@ -61,6 +55,7 @@ class CaptionGenerator(object):
             self.token2index = { word['word']:word['idx'] for word in json_file["words"]}
         else:
             self.token2index = json_file
+
 
         return {v:k for k,v in self.token2index.items()}
 
@@ -110,29 +105,7 @@ class CaptionGenerator(object):
 
         return sorted(found_paths, key=lambda x: x["cost"]) 
 
-    def beam_search0(self,initial_state):
-        #original one. This takes much memory
-        found_paths=[]
-        q = Q.PriorityQueue()
-        q.put((0,initial_state))
-        while (len(found_paths) < self.beamsize):
-            i=0
-            # this is just a one step ahead? 
-            while not q.empty():
-                if i == self.beamsize:
-                    break
-                state=q.get()[1]
-                #is goal state? -> yes, then end the search
-                if state["path"][-1] == self.token2index["<eos>"] or len(state["path"])==self.depth_limit:
-                    found_paths.append(state)
-                    continue
-                #examine to next five possible states and add to priority queue 
-                hy, cy, k_best_next_states = self.successor(state)
-                for next_state in k_best_next_states:
-                    q.put((state["cost"],next_state))
-                i+=1
-
-        return sorted(found_paths, key=lambda x: x["cost"]) 
+ 
 
     def generate(self,image_file_path):
         img=self.image_loader.load(image_file_path)
@@ -140,9 +113,6 @@ class CaptionGenerator(object):
 
 
     def generate_from_img_feature(self,image_feature):
-        if self.gpu_id >= 0:
-            image_feature=cuda.to_gpu(image_feature)
-
         batch_size=1
         hx=xp.zeros((self.rnn_model.n_layers, batch_size, self.rnn_model.hidden_dim), dtype=xp.float32)
         cx=xp.zeros((self.rnn_model.n_layers, batch_size, self.rnn_model.hidden_dim), dtype=xp.float32)
@@ -164,26 +134,10 @@ class CaptionGenerator(object):
             sentence= [self.index2token[word_idx] for word_idx in caption["path"]]
             log_likelihood = -float(caption["cost"])#cost is the negative log likelihood
             caption_candidates.append({"sentence":sentence,"log_likelihood":log_likelihood})
-
         return caption_candidates
 
     def generate_from_img(self,image_array):
-        if self.gpu_id >= 0:
-            image_array=cuda.to_gpu(image_array)
         image_feature=self.cnn_model(image_array, "feature").data.reshape(1,1,2048)
         return self.generate_from_img_feature(image_feature)
 
-if __name__ == '__main__':
-    xp=np
-    #test code on cpu
-    caption_generator=CaptionGenerator(
-        rnn_model_place="../experiment1/caption_model1.model",\
-        cnn_model_place="../data/ResNet50.model",\
-        dictonary_place="../data/MSCOCO/mscoco_caption_train2014_processed_dic.json",\
-        beamsize=3,depth_limit=50,gpu_id=-1,)
-
-    captions = caption_generator.generate("../sample_imgs/COCO_val2014_000000185546.jpg")
-    for caption in captions:
-        print(caption["sentence"])
-        print(caption["log_likelihood"])
 

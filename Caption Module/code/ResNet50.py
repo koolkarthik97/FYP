@@ -66,7 +66,6 @@ class Block(chainer.Chain):
         for name, _ in self.forward:
             f = getattr(self, name)
             x = f(x, train)
-
         return x
 
 
